@@ -1,15 +1,29 @@
 {
-  "name": "tinkuy",
-  "version": "0.1.0",
+  "name": "@carloscortezcloud/tinkuy-agent",
+  "version": "0.1.1",
   "description": "Minimal provider-agnostic AI agent framework. Tool loops, budget control, multi-model routing — in 200 lines.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
-    "./agent": { "types": "./dist/core/agent.d.ts", "import": "./dist/core/agent.js" },
-    "./tools": { "types": "./dist/tools/index.d.ts", "import": "./dist/tools/index.js" },
-    "./state": { "types": "./dist/state/index.d.ts", "import": "./dist/state/index.js" }
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./agent": {
+      "types": "./dist/core/agent.d.ts",
+      "import": "./dist/core/agent.js"
+    },
+    "./tools": {
+      "types": "./dist/tools/index.d.ts",
+      "import": "./dist/tools/index.js"
+    },
+    "./state": {
+      "types": "./dist/state/index.d.ts",
+      "import": "./dist/state/index.js"
+    }
   },
   "scripts": {
     "build": "tsc",
@@ -18,7 +32,17 @@
     "lint": "tsc --noEmit",
     "prepublishOnly": "npm run build"
   },
-  "keywords": ["ai", "agent", "framework", "llm", "tool-use", "multi-model", "minimal", "agentic", "function-calling"],
+  "keywords": [
+    "ai",
+    "agent",
+    "framework",
+    "llm",
+    "tool-use",
+    "multi-model",
+    "minimal",
+    "agentic",
+    "function-calling"
+  ],
   "author": "Carlos Cortez <carlos@finoptix.dev>",
   "license": "Apache-2.0",
   "repository": {
@@ -26,17 +50,22 @@
     "url": "https://github.com/breakingthecloud/tinkuy"
   },
   "peerDependencies": {
-    "styrr": ">=0.1.0",
-    "sayay": ">=0.1.0"
+    "sayay": ">=0.1.0",
+    "styrr": ">=0.1.0"
   },
   "peerDependenciesMeta": {
-    "styrr": { "optional": true },
-    "sayay": { "optional": true }
+    "styrr": {
+      "optional": true
+    },
+    "sayay": {
+      "optional": true
+    }
   },
   "devDependencies": {
-    "typescript": "^5.5.0",
-    "vitest": "^2.0.0",
+    "sayay": "github:breakingthecloud/sayay",
     "styrr": "github:breakingthecloud/styrr",
-    "sayay": "github:breakingthecloud/sayay"
-  }
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  },
+  "type": "module"
 }
