@@ -31,6 +31,10 @@ export { defineTool, simpleTask } from './tools/index.js';
 export { ToolRegistry } from './registry/index.js';
 export type { ToolRegistryEntry, RegistryValidationError } from './registry/index.js';
 
+// Conversation
+export { MemoryConversationStore, KVConversationStore } from './conversation/index.js';
+export type { ConversationStore, ConversationOptions } from './conversation/index.js';
+
 // State
 export { MemoryState } from './state/index.js';
 export type { ConversationState } from './state/index.js';
