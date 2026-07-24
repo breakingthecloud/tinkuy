@@ -1,6 +1,6 @@
 {
   "name": "@carloscortezcloud/tinkuy-agent",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Minimal provider-agnostic AI agent framework. Tool loops, budget control, multi-model routing — in 200 lines.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -23,6 +23,10 @@
     "./state": {
       "types": "./dist/state/index.d.ts",
       "import": "./dist/state/index.js"
+    },
+    "./registry": {
+      "types": "./dist/registry/index.d.ts",
+      "import": "./dist/registry/index.js"
     }
   },
   "scripts": {

@@ -27,6 +27,10 @@ export { Agent } from './core/agent.js';
 // Tools
 export { defineTool, simpleTask } from './tools/index.js';
 
+// Registry
+export { ToolRegistry } from './registry/index.js';
+export type { ToolRegistryEntry, RegistryValidationError } from './registry/index.js';
+
 // State
 export { MemoryState } from './state/index.js';
 export type { ConversationState } from './state/index.js';
