@@ -5,15 +5,15 @@ Where rivers meet. Build AI agents with tool loops, budget control, and multi-mo
 ## Install
 
 ```bash
-npm install github:breakingthecloud/tinkuy
+npm install @carloscortezcloud/tinkuy-agent
 ```
 
 ## Quick Start
 
 ```typescript
-import { Agent, defineTool } from 'tinkuy';
-import { StyrRouter } from 'styrr';
-import { SayayGuard, MemoryStorage } from 'sayay';
+import { Agent, defineTool } from '@carloscortezcloud/tinkuy-agent';
+import { StyrRouter } from '@carloscortezcloud/styrr-llm';
+import { SayayGuard, MemoryStorage } from '@carloscortezcloud/sayay-guard';
 
 // Define tools
 const getWeather = defineTool({
@@ -69,7 +69,10 @@ Agent → User: result
 - **Tool loop**: call LLM → parse tool_calls → execute → feed back → repeat
 - **Budget guard**: Sayay integration (block/degrade/warn before each call)
 - **Multi-model**: Styrr integration (fallback chain, cheapest, fastest)
-- **Observable**: `onIteration` + `onToolCall` hooks (feed to Qhaway)
+- **Streaming**: `Agent.stream()` yields AG-UI events (text_delta, tool_call_result, done, blocked)
+- **SSE helper**: `agentToSSE()` converts the stream to a Cloudflare Worker `Response`
+- **Observable**: `onIteration` + `onToolCall` + `onComplete` hooks (feed to Qhaway)
+- **Conversation state**: `MemoryConversationStore` / `KVConversationStore` with sliding windows
 - **Max iterations**: prevent infinite loops (default 10)
 - **Error resilient**: tool errors are fed back to LLM as context (it recovers)
 - **Zero deps**: only peer deps on Styrr + Sayay (both optional)
@@ -99,11 +102,55 @@ Agent → User: result
 └─────────────────────────────────────┘
 ```
 
+## Streaming
+
+```typescript
+import { Agent, defineTool, agentToSSE } from '@carloscortezcloud/tinkuy-agent';
+
+const agent = new Agent({ router, tools, systemPrompt: '...' });
+
+// In a Cloudflare Worker:
+app.post('/chat/stream', async (c) => {
+  const { message, sessionId } = await c.req.json();
+  const stream = agent.stream(message, { sessionId });
+  return new Response(agentToSSE(stream), {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+    },
+  });
+});
+```
+
+Stream events follow the AG-UI format:
+
+```typescript
+{ type: 'iteration_start', iteration: 1, modelUsed: '...' }
+{ type: 'text_delta', text: 'The weather' }
+{ type: 'tool_call_result', tool: 'get_weather', toolResult: {...} }
+{ type: 'done', iterations: 2, toolsUsed: ['get_weather'], totalLatencyMs: 3500 }
+```
+
+## Observability hooks
+
+```typescript
+const agent = new Agent({
+  router,
+  tools,
+  onIteration: (event) => console.log('iteration', event.iteration),
+  onToolCall: (event) => console.log('tool', event.tool, event.durationMs),
+  onComplete: (event) => {
+    console.log('run done', event.result);
+    // Push to Qhaway, log cost, etc.
+  },
+});
+```
+
 ## Without Styrr/Sayay (BYO router)
 
 ```typescript
-import { Agent, defineTool } from 'tinkuy';
-import type { Router, RouterResponse, Message } from 'tinkuy';
+import { Agent, defineTool } from '@carloscortezcloud/tinkuy-agent';
+import type { Router, RouterResponse, Message } from '@carloscortezcloud/tinkuy-agent';
 
 // Custom router (any LLM provider)
 const myRouter: Router = {

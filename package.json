@@ -58,20 +58,20 @@
     "url": "https://github.com/breakingthecloud/tinkuy"
   },
   "peerDependencies": {
-    "sayay": ">=0.1.0",
-    "styrr": ">=0.1.0"
+    "@carloscortezcloud/sayay-guard": ">=0.1.0",
+    "@carloscortezcloud/styrr-llm": ">=0.1.0"
   },
   "peerDependenciesMeta": {
-    "styrr": {
+    "@carloscortezcloud/styrr-llm": {
       "optional": true
     },
-    "sayay": {
+    "@carloscortezcloud/sayay-guard": {
       "optional": true
     }
   },
   "devDependencies": {
-    "sayay": "github:breakingthecloud/sayay",
-    "styrr": "github:breakingthecloud/styrr",
+    "@carloscortezcloud/sayay-guard": "^0.1.1",
+    "@carloscortezcloud/styrr-llm": "^0.4.0",
     "typescript": "^5.5.0",
     "vitest": "^2.0.0"
   },

@@ -75,6 +75,8 @@ export class Agent {
         const decision = await this.guard.check(this.userId, 0.005);
         if (decision.action === 'block') {
           yield { type: 'blocked', blockReason: decision.reason, iterations, toolsUsed };
+          const result = { text: '', blocked: true, blockReason: decision.reason, iterations, toolsUsed, toolResults: allToolResults, totalLatencyMs, modelsUsed } as AgentResult;
+          this.config.onComplete?.({ iterations, totalLatencyMs, modelsUsed, toolsUsed, result });
           return;
         }
       }
@@ -180,6 +182,8 @@ export class Agent {
           await this.config.conversationStore.save(options.sessionId, messages);
         }
         yield { type: 'done', iterations, toolsUsed, totalLatencyMs, modelsUsed };
+        const result = { text: accumulator, blocked: false, iterations, toolsUsed, toolResults: allToolResults, totalLatencyMs, modelsUsed } as AgentResult;
+        this.config.onComplete?.({ iterations, totalLatencyMs, modelsUsed, toolsUsed, result });
         return;
       }
 
@@ -219,7 +223,11 @@ export class Agent {
       if (this.guard) {
         const decision = await this.guard.check(this.userId, 0.005); // estimate
         if (decision.action === 'block') {
-          return this.result({ text: '', blocked: true, blockReason: decision.reason, iterations, toolsUsed, toolResults, totalLatencyMs, modelsUsed });
+          const result = this.result({ text: '', blocked: true, blockReason: decision.reason, iterations, toolsUsed, toolResults, totalLatencyMs, modelsUsed });
+          this.config.onComplete?.({
+            iterations, totalLatencyMs, modelsUsed, toolsUsed, result,
+          });
+          return result;
         }
       }
 
@@ -253,9 +261,12 @@ export class Agent {
 
       // ── No tool calls? Final answer. ──
       if (!response.toolCalls?.length) {
-        // Add assistant message
         messages.push({ role: 'assistant', content: response.text });
-        return this.result({ text: response.text, blocked: false, iterations, toolsUsed, toolResults, totalLatencyMs, modelsUsed });
+        const result = this.result({ text: response.text, blocked: false, iterations, toolsUsed, toolResults, totalLatencyMs, modelsUsed });
+        this.config.onComplete?.({
+          iterations, totalLatencyMs, modelsUsed, toolsUsed, result,
+        });
+        return result;
       }
 
       // ── Execute tool calls ──
@@ -284,7 +295,7 @@ export class Agent {
 
     // Max iterations reached
     const lastAssistant = messages.filter(m => m.role === 'assistant').pop();
-    return this.result({
+    const result = this.result({
       text: lastAssistant?.content || '[Max iterations reached]',
       blocked: false,
       iterations,
@@ -293,6 +304,8 @@ export class Agent {
       totalLatencyMs,
       modelsUsed,
     });
+    this.config.onComplete?.({ iterations, totalLatencyMs, modelsUsed, toolsUsed, result });
+    return result;
   }
 
   // ─── Private ────────────────────────────────────────────────────────

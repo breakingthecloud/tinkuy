@@ -7,9 +7,9 @@
  * Zero opinions. Zero vendor lock-in. Under 200 lines of core logic.
  *
  * @example
- * import { Agent, defineTool } from 'tinkuy';
- * import { StyrRouter } from 'styrr';
- * import { SayayGuard, MemoryStorage } from 'sayay';
+ * import { Agent, defineTool } from '@carloscortezcloud/tinkuy-agent';
+ * import { StyrRouter } from '@carloscortezcloud/styrr-llm';
+ * import { SayayGuard, MemoryStorage } from '@carloscortezcloud/sayay-guard';
  *
  * const agent = new Agent({
  *   router: new StyrRouter({ apiKey: '...', models: [...] }),
@@ -48,6 +48,7 @@ export type {
   AgentResult,
   AgentStreamEvent,
   AgentStreamOptions,
+  CompleteEvent,
   Guard,
   GuardDecision,
   IterationEvent,

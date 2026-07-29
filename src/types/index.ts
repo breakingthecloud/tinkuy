@@ -122,6 +122,8 @@ export interface AgentConfig {
   onIteration?: (event: IterationEvent) => void;
   /** Hook: called when a tool executes */
   onToolCall?: (event: ToolCallEvent) => void;
+  /** Hook: called when agent run completes */
+  onComplete?: (event: CompleteEvent) => void;
 }
 
 // ─── Agent Stream ────────────────────────────────────────────────────────
@@ -179,4 +181,14 @@ export interface ToolCallEvent {
   result: unknown;
   durationMs: number;
   error?: string;
+}
+
+export interface CompleteEvent {
+  session_id?: string;
+  user_id?: string;
+  iterations: number;
+  totalLatencyMs: number;
+  modelsUsed: string[];
+  toolsUsed: string[];
+  result: AgentResult;
 }
