@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { Agent } from './core/agent.js';
-import type { Router, Tool, RouterStreamEvent, Message, ConversationStore } from './types/index.js';
+import type { Router, Tool, RouterStreamEvent, Message } from './types/index.js';
+import type { ConversationStore } from './conversation/index.js';
 
 function mockRouter(events: RouterStreamEvent[]): Router {
   return {
