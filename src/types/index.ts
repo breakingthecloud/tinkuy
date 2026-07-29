@@ -6,6 +6,8 @@
  * Router and Guard are pluggable (Styrr + Sayay by default).
  */
 
+import type { ConversationStore } from '../conversation/index.js';
+
 // ─── Tool System ────────────────────────────────────────────────────────
 
 /** A tool that the agent can call */
@@ -52,7 +54,15 @@ export interface Message {
 /** LLM Router — pluggable. Default: StyrRouter. */
 export interface Router {
   call(messages: Message[], options?: RouterOptions): Promise<RouterResponse>;
+  stream(messages: Message[], options?: RouterOptions): AsyncGenerator<RouterStreamEvent>;
 }
+
+export type RouterStreamEvent =
+  | { type: 'text_delta'; text: string }
+  | { type: 'tool_call_start'; toolCall: { id: string; name: string; arguments: any } }
+  | { type: 'tool_call_done'; toolCall: { id: string; name: string; arguments: any } }
+  | { type: 'done'; modelUsed: string; usage?: { promptTokens?: number; completionTokens?: number; totalTokens?: number } }
+  | { type: 'error'; error: string };
 
 export interface RouterOptions {
   tools?: ToolSchema[];
@@ -106,10 +116,27 @@ export interface AgentConfig {
   maxIterations?: number;
   /** Temperature (default: 0.7) */
   temperature?: number;
+  /** Conversation store for multi-turn persistence */
+  conversationStore?: ConversationStore;
   /** Hook: called after each iteration */
   onIteration?: (event: IterationEvent) => void;
   /** Hook: called when a tool executes */
   onToolCall?: (event: ToolCallEvent) => void;
+}
+
+// ─── Agent Stream ────────────────────────────────────────────────────────
+
+export type AgentStreamEvent =
+  | { type: 'iteration_start'; iteration: number; modelUsed?: string }
+  | { type: 'text_delta'; text: string }
+  | { type: 'tool_call_result'; tool: string; toolArgs: Record<string, unknown>; toolResult: unknown; toolError?: string; durationMs: number }
+  | { type: 'done'; iterations: number; toolsUsed: string[]; totalLatencyMs: number; modelsUsed: string[] }
+  | { type: 'error'; error: string }
+  | { type: 'blocked'; blockReason?: string; iterations: number; toolsUsed: string[] };
+
+export interface AgentStreamOptions {
+  /** Session ID for conversation persistence */
+  sessionId?: string;
 }
 
 // ─── Agent Result ───────────────────────────────────────────────────────

@@ -39,10 +39,15 @@ export type { ConversationStore, ConversationOptions } from './conversation/inde
 export { MemoryState } from './state/index.js';
 export type { ConversationState } from './state/index.js';
 
+// SSE helpers
+export { agentToSSE } from './sse.js';
+
 // Types (re-export all for consumers)
 export type {
   AgentConfig,
   AgentResult,
+  AgentStreamEvent,
+  AgentStreamOptions,
   Guard,
   GuardDecision,
   IterationEvent,
@@ -51,6 +56,7 @@ export type {
   Router,
   RouterOptions,
   RouterResponse,
+  RouterStreamEvent,
   Tool,
   ToolCall,
   ToolCallEvent,

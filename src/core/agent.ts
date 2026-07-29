@@ -14,6 +14,8 @@
 import type {
   AgentConfig,
   AgentResult,
+  AgentStreamEvent,
+  AgentStreamOptions,
   Guard,
   Message,
   Router,
@@ -42,6 +44,155 @@ export class Agent {
     this.maxIterations = config.maxIterations ?? 10;
     this.temperature = config.temperature ?? 0.7;
     this.userId = config.userId ?? 'default';
+  }
+
+  /**
+   * Stream the agent execution with real-time AG-UI events.
+   *
+   * Events: iteration_start, text_delta, tool_call_start, tool_call_result, done, error, blocked
+   */
+  async *stream(userMessage: string, options?: AgentStreamOptions): AsyncGenerator<AgentStreamEvent> {
+    const messages: Message[] = [
+      { role: 'system', content: this.systemPrompt },
+      { role: 'user', content: userMessage },
+    ];
+
+    if (options?.sessionId && this.config.conversationStore) {
+      const history = await this.config.conversationStore.get(options.sessionId);
+      messages.splice(1, 0, ...history);
+    }
+    const toolSchemas = this.buildToolSchemas();
+    const toolsUsed: string[] = [];
+    const modelsUsed: string[] = [];
+    const allToolResults: ToolResult[] = [];
+    let totalLatencyMs = 0;
+    let iterations = 0;
+
+    for (let i = 0; i < this.maxIterations; i++) {
+      iterations = i + 1;
+
+      if (this.guard) {
+        const decision = await this.guard.check(this.userId, 0.005);
+        if (decision.action === 'block') {
+          yield { type: 'blocked', blockReason: decision.reason, iterations, toolsUsed };
+          return;
+        }
+      }
+
+      yield { type: 'iteration_start', iteration: iterations };
+
+      const iterationToolCalls: ToolCall[] = [];
+      let accumulator = '';
+      let latencyMs = 0;
+      let modelUsed = '';
+      let promptTokens = 0;
+      let completionTokens = 0;
+
+      const startTime = Date.now();
+      try {
+        for await (const event of this.router.stream(messages, {
+          tools: toolSchemas.length > 0 ? toolSchemas : undefined,
+          temperature: this.temperature,
+        })) {
+          switch (event.type) {
+            case 'text_delta':
+              accumulator += event.text;
+              yield { type: 'text_delta', text: event.text };
+              break;
+
+            case 'tool_call_start':
+              // Record tool call info (args come in tool_call_done)
+              iterationToolCalls.push({ id: event.toolCall.id, name: event.toolCall.name, arguments: {} });
+              break;
+
+            case 'tool_call_done': {
+              const pending = iterationToolCalls.find(tc => tc.id === event.toolCall.id);
+              if (pending) {
+                pending.arguments = event.toolCall.arguments || {};
+                const toolResult = await this.executeTool(pending, iterations);
+                allToolResults.push(toolResult);
+                if (!toolsUsed.includes(pending.name)) toolsUsed.push(pending.name);
+                if (this.config.onToolCall) {
+                  this.config.onToolCall({
+                    iteration: iterations,
+                    tool: pending.name,
+                    arguments: pending.arguments as Record<string, unknown>,
+                    result: toolResult.result,
+                    durationMs: toolResult.durationMs,
+                    error: toolResult.error,
+                  });
+                }
+
+                yield {
+                  type: 'tool_call_result',
+                  tool: pending.name,
+                  toolArgs: pending.arguments as Record<string, unknown>,
+                  toolResult: toolResult.result,
+                  toolError: toolResult.error,
+                  durationMs: toolResult.durationMs,
+                };
+              }
+              break;
+            }
+
+            case 'done':
+              modelUsed = event.modelUsed;
+              latencyMs = Date.now() - startTime;
+              promptTokens = event.usage?.promptTokens ?? 0;
+              completionTokens = event.usage?.completionTokens ?? 0;
+              break;
+
+            case 'error':
+              yield { type: 'error', error: event.error };
+              return;
+          }
+        }
+      } catch (err: unknown) {
+        yield { type: 'error', error: err instanceof Error ? err.message : String(err) };
+        return;
+      }
+
+      totalLatencyMs += latencyMs;
+      if (modelUsed && !modelsUsed.includes(modelUsed)) modelsUsed.push(modelUsed);
+      if (this.guard && completionTokens > 0) {
+        const estimatedCost = (promptTokens + completionTokens) * 0.000001;
+        await this.guard.record(this.userId, estimatedCost);
+      }
+
+      messages.push({
+        role: 'assistant',
+        content: accumulator,
+        toolCalls: iterationToolCalls.length > 0 ? iterationToolCalls : undefined,
+      });
+
+      if (this.config.onIteration) {
+        this.config.onIteration({
+          iteration: iterations,
+          modelUsed,
+          latencyMs,
+          hasToolCalls: iterationToolCalls.length > 0,
+          toolCalls: iterationToolCalls.length > 0 ? iterationToolCalls : undefined,
+        });
+      }
+
+      if (iterationToolCalls.length === 0) {
+        if (options?.sessionId && this.config.conversationStore) {
+          await this.config.conversationStore.save(options.sessionId, messages);
+        }
+        yield { type: 'done', iterations, toolsUsed, totalLatencyMs, modelsUsed };
+        return;
+      }
+
+      for (const tr of allToolResults.filter(r => !messages.some(m => m.role === 'tool' && m.toolCallId === r.callId))) {
+        messages.push({
+          role: 'tool',
+          content: tr.error ? `Error: ${tr.error}` : JSON.stringify(tr.result),
+          toolCallId: tr.callId,
+        });
+      }
+    }
+
+    yield { type: 'error', error: 'Max iterations reached' };
   }
 
   /**
