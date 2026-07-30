@@ -1,26 +1,42 @@
-# 🌊 Tinkuy — Minimal Provider-Agnostic AI Agent Framework
+<p align="center">
+  <img alt="Tinkuy" src="https://img.shields.io/badge/🌊-Tinkuy-3B82F6?style=for-the-badge" height="50">
+</p>
 
-[![npm version](https://img.shields.io/npm/v/@carloscortezcloud/tinkuy-agent?color=blue)](https://www.npmjs.com/package/@carloscortezcloud/tinkuy-agent)
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.5%2B-3178C6)](https://www.typescriptlang.org)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](https://github.com/breakingthecloud/tinkuy/pulls)
+<p align="center">
+  <b>Minimal Provider-Agnostic AI Agent Framework</b><br>
+  Tool loops, budget control, multi-model routing — in ~200 lines of core logic.
+</p>
 
-Where rivers meet. Build AI agents with tool loops, budget control, and multi-model routing. Zero opinions. Zero vendor lock-in. Under 200 lines of core logic.
+<p align="center">
+  <a href="#quick-start">Quick Start</a>
+  ·
+  <a href="#features">Features</a>
+  ·
+  <a href="#streaming">Streaming</a>
+  ·
+  <a href="#ecosystem">Ecosystem</a>
+</p>
 
-## Install
+<p align="center">
+  <img src="https://img.shields.io/npm/v/@carloscortezcloud/tinkuy-agent?style=flat-square&logo=npm&color=3B82F6" alt="npm">
+  <img src="https://img.shields.io/badge/license-Apache_2.0-3B82F6?style=flat-square" alt="License">
+  <img src="https://img.shields.io/badge/TypeScript-5.5%2B-3178C6?style=flat-square&logo=typescript" alt="TypeScript">
+  <img src="https://img.shields.io/badge/dependencies-0-success?style=flat-square" alt="Zero deps">
+  <img src="https://img.shields.io/badge/size-%3E5KB-3B82F6?style=flat-square" alt="Size">
+  <img src="https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat-square" alt="PRs">
+</p>
 
-```bash
-npm install @carloscortezcloud/tinkuy-agent
-```
+---
 
-## Quick Start
+## What Is Tinkuy?
+
+Tinkuy (Quechua: "where rivers meet") is where your tools, models, and budgets converge into one agent loop. Call LLM → parse tool_calls → execute → feed back → repeat. No vendor lock-in, no heavy dependencies, no framework opinions.
 
 ```typescript
 import { Agent, defineTool } from '@carloscortezcloud/tinkuy-agent';
 import { StyrRouter } from '@carloscortezcloud/styrr-llm';
 import { SayayGuard, MemoryStorage } from '@carloscortezcloud/sayay-guard';
 
-// Define tools
 const getWeather = defineTool({
   name: 'get_weather',
   description: 'Get current weather for a city',
@@ -28,7 +44,6 @@ const getWeather = defineTool({
   execute: async ({ city }) => ({ temp: 22, condition: 'sunny', city }),
 });
 
-// Create agent
 const agent = new Agent({
   router: new StyrRouter({
     apiKey: process.env.OPENROUTER_API_KEY!,
@@ -42,12 +57,39 @@ const agent = new Agent({
   systemPrompt: 'You are a helpful assistant. Use tools when needed.',
 });
 
-// Run
 const result = await agent.run('What is the weather in Lima?');
 console.log(result.text);           // "The weather in Lima is 22°C and sunny."
-console.log(result.iterations);     // 2 (1: tool call, 2: final answer)
-console.log(result.toolsUsed);      // ['get_weather']
+console.log(result.iterations);     // 2
 console.log(result.totalLatencyMs); // ~3500
+```
+
+## Install
+
+```bash
+npm install @carloscortezcloud/tinkuy-agent
+```
+
+## Quick Start
+
+### 1. Install
+
+```bash
+npm install @carloscortezcloud/tinkuy-agent @carloscortezcloud/styrr-llm @carloscortezcloud/sayay-guard
+```
+
+### 2. Run your first agent
+
+```typescript
+import { Agent, defineTool } from '@carloscortezcloud/tinkuy-agent';
+
+const agent = new Agent({
+  router: { call: async () => ({ text: 'Hello!', modelUsed: 'mock', latencyMs: 0 }) },
+  tools: [],
+  systemPrompt: 'You are a helpful assistant.',
+});
+
+const result = await agent.run('Say hello');
+console.log(result.text);
 ```
 
 ## How It Works
@@ -66,22 +108,76 @@ Agent → LLM: "Tool returned: {temp: 22, sunny}. Answer the user."
 LLM → Agent: "The weather in Lima is 22°C and sunny."
   │
   ▼ done
-Agent → User: result
+Agent → User: { text, iterations, toolsUsed, totalLatencyMs }
 ```
 
 ## Features
 
-- **Tool loop**: call LLM → parse tool_calls → execute → feed back → repeat
-- **Budget guard**: Sayay integration (block/degrade/warn before each call)
-- **Multi-model**: Styrr integration (fallback chain, cheapest, fastest)
-- **Streaming**: `Agent.stream()` yields AG-UI events (text_delta, tool_call_result, done, blocked)
-- **SSE helper**: `agentToSSE()` converts the stream to a Cloudflare Worker `Response`
-- **Observable**: `onIteration` + `onToolCall` + `onComplete` hooks (feed to Qhaway)
-- **Conversation state**: `MemoryConversationStore` / `KVConversationStore` with sliding windows
-- **Max iterations**: prevent infinite loops (default 10)
-- **Error resilient**: tool errors are fed back to LLM as context (it recovers)
-- **Zero deps**: only peer deps on Styrr + Sayay (both optional)
-- **Tiny**: ~200 lines core logic, ~5KB bundled
+| Feature | Description |
+|---------|-------------|
+| **Tool loop** | Call LLM → parse tool_calls → execute → feed back → repeat |
+| **Budget guard** | Sayay integration — block/degrade/warn before each call |
+| **Multi-model** | Styrr integration — fallback chain, cheapest, fastest |
+| **Streaming** | `Agent.stream()` yields AG-UI events (`text_delta`, `tool_call_result`, `done`, `blocked`) |
+| **SSE helper** | `agentToSSE()` converts stream to Cloudflare Worker `Response` |
+| **Observable** | `onIteration` + `onToolCall` + `onComplete` hooks |
+| **Conversation state** | `MemoryConversationStore` / `KVConversationStore` with sliding windows |
+| **Max iterations** | Infinite loop protection (default 10) |
+| **Error resilient** | Tool errors fed back to LLM — it recovers |
+| **Zero deps** | Only peer deps on Styrr + Sayay (both optional) |
+| **Tiny** | ~200 lines core logic, ~5KB bundled |
+
+## Streaming
+
+```typescript
+import { Agent, agentToSSE } from '@carloscortezcloud/tinkuy-agent';
+
+const stream = agent.stream(message, { sessionId });
+
+// In a Cloudflare Worker:
+return new Response(agentToSSE(stream), {
+  headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },
+});
+```
+
+Stream events follow the AG-UI format:
+```
+{ type: 'iteration_start', iteration: 1, modelUsed: '...' }
+{ type: 'text_delta', text: 'The weather' }
+{ type: 'tool_call_result', tool: 'get_weather', toolResult: {...} }
+{ type: 'done', iterations: 2, toolsUsed: ['get_weather'], totalLatencyMs: 3500 }
+```
+
+## Observability
+
+```typescript
+const agent = new Agent({
+  router,
+  tools,
+  onIteration: (event) => console.log('iteration', event.iteration),
+  onToolCall: (event) => console.log('tool', event.tool, event.durationMs),
+  onComplete: (event) => {
+    console.log('run done', event.result);
+    // Push to Qhaway for cost/latency observability
+  },
+});
+```
+
+## BYO Router (No Styrr/Sayay Required)
+
+```typescript
+import { Agent } from '@carloscortezcloud/tinkuy-agent';
+import type { Router, RouterResponse, Message } from '@carloscortezcloud/tinkuy-agent';
+
+const myRouter: Router = {
+  async call(messages: Message[]): Promise<RouterResponse> {
+    const res = await fetch('https://api.openai.com/v1/chat/completions', { ... });
+    return { text: '...', modelUsed: 'gpt-4o', latencyMs: 1200 };
+  }
+};
+
+const agent = new Agent({ router: myRouter, tools: [...], systemPrompt: '...' });
+```
 
 ## Architecture
 
@@ -107,79 +203,26 @@ Agent → User: result
 └─────────────────────────────────────┘
 ```
 
-## Streaming
+## Ecosystem
 
-```typescript
-import { Agent, defineTool, agentToSSE } from '@carloscortezcloud/tinkuy-agent';
-
-const agent = new Agent({ router, tools, systemPrompt: '...' });
-
-// In a Cloudflare Worker:
-app.post('/chat/stream', async (c) => {
-  const { message, sessionId } = await c.req.json();
-  const stream = agent.stream(message, { sessionId });
-  return new Response(agentToSSE(stream), {
-    headers: {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-    },
-  });
-});
-```
-
-Stream events follow the AG-UI format:
-
-```typescript
-{ type: 'iteration_start', iteration: 1, modelUsed: '...' }
-{ type: 'text_delta', text: 'The weather' }
-{ type: 'tool_call_result', tool: 'get_weather', toolResult: {...} }
-{ type: 'done', iterations: 2, toolsUsed: ['get_weather'], totalLatencyMs: 3500 }
-```
-
-## Observability hooks
-
-```typescript
-const agent = new Agent({
-  router,
-  tools,
-  onIteration: (event) => console.log('iteration', event.iteration),
-  onToolCall: (event) => console.log('tool', event.tool, event.durationMs),
-  onComplete: (event) => {
-    console.log('run done', event.result);
-    // Push to Qhaway, log cost, etc.
-  },
-});
-```
-
-## Without Styrr/Sayay (BYO router)
-
-```typescript
-import { Agent, defineTool } from '@carloscortezcloud/tinkuy-agent';
-import type { Router, RouterResponse, Message } from '@carloscortezcloud/tinkuy-agent';
-
-// Custom router (any LLM provider)
-const myRouter: Router = {
-  async call(messages: Message[]): Promise<RouterResponse> {
-    const res = await fetch('https://api.openai.com/v1/chat/completions', { ... });
-    return { text: '...', modelUsed: 'gpt-4o', latencyMs: 1200 };
-  }
-};
-
-const agent = new Agent({ router: myRouter, tools: [...], systemPrompt: '...' });
-```
-
-## Name
-
-**Tinkuy** (Quechua) = "where rivers meet" — where your tools, models, and budgets converge into one agent.
-
-## Part of the FinOptix OSS Ecosystem
-
-- 🧭 **Styrr** — LLM Router (multi-model fallback)
-- ⚓ **Sayay** — Agent Cost Guardrails (budget enforcement)
-- 🌊 **Tinkuy** — Agentic Framework (this package)
-- 👁️ **Qhaway** — Agent Observability
-- 🗺️ **Ñan** — Architecture Graph
+| Package | Role | npm |
+|---------|------|-----|
+| **Tinkuy** | Agent framework (this) | `@carloscortezcloud/tinkuy-agent` |
+| **Styrr** | LLM router | `styrr` |
+| **Sayay** | Cost guardrails | GitHub |
+| **Qhaway** | Agent observability | `@carloscortezcloud/qhaway` |
+| **TideRAG** | Edge RAG pipeline | `@carloscortezcloud/tiderag` |
 
 ## License
 
-Apache 2.0
+Apache 2.0 — see [LICENSE](LICENSE).
+
+---
+
+<p align="center">
+  Built by engineers who got tired of vendor lock-in.<br>
+  <a href="https://github.com/breakingthecloud/tinkuylabs">Tinkuy Labs</a> · <a href="https://finoptix.dev">finoptix.dev</a>
+</p>
+<p align="center">
+  <sub>Tinkuy runs on free models. Your agent framework shouldn't cost you.</sub>
+</p>
