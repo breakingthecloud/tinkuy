@@ -1,5 +1,10 @@
 # 🌊 Tinkuy — Minimal Provider-Agnostic AI Agent Framework
 
+[![npm version](https://img.shields.io/npm/v/@carloscortezcloud/tinkuy-agent?color=blue)](https://www.npmjs.com/package/@carloscortezcloud/tinkuy-agent)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.5%2B-3178C6)](https://www.typescriptlang.org)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](https://github.com/breakingthecloud/tinkuy/pulls)
+
 Where rivers meet. Build AI agents with tool loops, budget control, and multi-model routing. Zero opinions. Zero vendor lock-in. Under 200 lines of core logic.
 
 ## Install
