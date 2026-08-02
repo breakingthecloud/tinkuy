@@ -24,6 +24,7 @@ import type {
   ToolResult,
   ToolSchema,
 } from '../types/index.js';
+import { validateResponse } from '../ontology/validator.js';
 
 export class Agent {
   private router: Router;
@@ -178,6 +179,11 @@ export class Agent {
       }
 
       if (iterationToolCalls.length === 0) {
+        // ── Ontology validation (optional deterministic grounding) ──
+        if (this.config.ontology) {
+          const validation = validateResponse(accumulator, this.config.ontology);
+          this.config.onOntologyValidated?.({ validation });
+        }
         if (options?.sessionId && this.config.conversationStore) {
           await this.config.conversationStore.save(options.sessionId, messages);
         }
@@ -236,6 +242,12 @@ export class Agent {
         tools: toolSchemas.length > 0 ? toolSchemas : undefined,
         temperature: this.temperature,
       });
+
+      // ── Ontology validation (optional deterministic grounding) ──
+      if (this.config.ontology) {
+        const validation = validateResponse(response, this.config.ontology);
+        this.config.onOntologyValidated?.({ validation });
+      }
 
       totalLatencyMs += response.latencyMs;
       if (!modelsUsed.includes(response.modelUsed)) {

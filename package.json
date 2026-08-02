@@ -31,6 +31,10 @@
     "./conversation": {
       "types": "./dist/conversation/index.d.ts",
       "import": "./dist/conversation/index.js"
+    },
+    "./ontology": {
+      "types": "./dist/ontology/index.d.ts",
+      "import": "./dist/ontology/index.js"
     }
   },
   "scripts": {
@@ -72,8 +76,12 @@
   "devDependencies": {
     "@carloscortezcloud/sayay-guard": "^0.1.1",
     "@carloscortezcloud/styrr-llm": "^0.4.0",
+    "@types/node": "^26.1.2",
     "typescript": "^5.5.0",
     "vitest": "^2.0.0"
   },
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "yaml": "^2.9.0"
+  }
 }
