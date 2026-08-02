@@ -3,11 +3,24 @@
  *
  * Fails fast on malformed YAML or invalid schema shape so a broken config
  * surfaces at startup, not at inference time.
+ *
+ * v1.1 additions:
+ *  - Property shorthand `"UUID"` OR spec `{ type, required, enum }`
+ *  - Relation `cardinality` (`1:1`, `1:N`, `N:1`, `N:M`)
+ *  - Entity `min_instances` / `max_instances`
+ *  - Optional `meta` block
  */
 
 import { readFile } from 'node:fs/promises';
 import { parse as parseYaml } from 'yaml';
-import type { OntologyEntity, OntologySchema, PropertyType } from './types.js';
+import type {
+  AllowedRelation,
+  Cardinality,
+  OntologyEntity,
+  OntologySchema,
+  PropertyMap,
+  PropertySpec,
+} from './types.js';
 
 const VALID_PROPERTY_TYPES = new Set<string>([
   'UUID',
@@ -18,6 +31,8 @@ const VALID_PROPERTY_TYPES = new Set<string>([
   'ARRAY',
   'OBJECT',
 ]);
+
+const VALID_CARDINALITIES = new Set<string>(['1:1', '1:N', 'N:1', 'N:M']);
 
 /** Load and validate an ontology schema from a YAML file path. */
 export async function loadOntology(path: string): Promise<OntologySchema> {
@@ -67,24 +82,21 @@ export function validateSchemaShape(parsed: unknown): OntologySchema {
       throw new Error(`[ontology] entity[${i}] missing string field: name`);
     }
     const props = (ent.properties ?? {}) as Record<string, unknown>;
-    const properties: Record<string, PropertyType> = {};
-    for (const [k, v] of Object.entries(props)) {
-      if (typeof v !== 'string' || !VALID_PROPERTY_TYPES.has(v)) {
-        throw new Error(
-          `[ontology] entity "${ent.name}" property "${k}" has invalid type "${String(v)}". ` +
-            `Valid: ${Array.from(VALID_PROPERTY_TYPES).join(', ')}`,
-        );
-      }
-      properties[k] = v as PropertyType;
-    }
-    return { name: ent.name, properties };
+    const properties = parseProperties(ent.name, props);
+    return {
+      name: ent.name,
+      description: typeof ent.description === 'string' ? ent.description : undefined,
+      properties,
+      min_instances: typeof ent.min_instances === 'number' ? ent.min_instances : undefined,
+      max_instances: typeof ent.max_instances === 'number' ? ent.max_instances : undefined,
+    };
   });
 
   const relationsRaw = ont.allowed_relations;
   if (!Array.isArray(relationsRaw)) {
     throw new Error('[ontology] ontology.allowed_relations must be an array');
   }
-  const allowed_relations = relationsRaw.map((r, i) => {
+  const allowed_relations: AllowedRelation[] = relationsRaw.map((r, i) => {
     const rel = r as Record<string, unknown>;
     if (
       typeof rel?.origin !== 'string' ||
@@ -93,7 +105,19 @@ export function validateSchemaShape(parsed: unknown): OntologySchema {
     ) {
       throw new Error(`[ontology] allowed_relations[${i}] requires string fields origin/relation/target`);
     }
-    return { origin: rel.origin, relation: rel.relation, target: rel.target };
+    if (rel.cardinality !== undefined && !VALID_CARDINALITIES.has(rel.cardinality as string)) {
+      throw new Error(
+        `[ontology] relation "${rel.relation}" has invalid cardinality "${String(rel.cardinality)}". ` +
+          `Valid: ${Array.from(VALID_CARDINALITIES).join(', ')}`,
+      );
+    }
+    return {
+      origin: rel.origin,
+      relation: rel.relation,
+      target: rel.target,
+      cardinality: rel.cardinality as Cardinality | undefined,
+      description: typeof rel.description === 'string' ? rel.description : undefined,
+    };
   });
 
   const harnessRaw = root.harness_constraints as Record<string, unknown> | undefined;
@@ -107,10 +131,72 @@ export function validateSchemaShape(parsed: unknown): OntologySchema {
     strands_routing: harnessRaw.strands_routing as OntologySchema['harness_constraints']['strands_routing'],
   };
 
-  return {
+  const schema: OntologySchema = {
     version: root.version,
     domain: root.domain,
     ontology: { entities, allowed_relations },
     harness_constraints,
   };
+
+  const meta = root.meta as Record<string, unknown> | undefined;
+  if (meta && typeof meta === 'object') {
+    schema.meta = {
+      description: typeof meta.description === 'string' ? meta.description : undefined,
+      owner: typeof meta.owner === 'string' ? meta.owner : undefined,
+      updated_at: typeof meta.updated_at === 'string' ? meta.updated_at : undefined,
+    };
+  }
+
+  return schema;
+}
+
+/** Normalize property definitions: `"UUID"` shorthand → `{ type: "UUID" }` */
+function parseProperties(entityName: string, props: Record<string, unknown>): PropertyMap {
+  const properties: PropertyMap = {};
+  for (const [k, v] of Object.entries(props)) {
+    if (typeof v === 'string') {
+      if (!VALID_PROPERTY_TYPES.has(v)) {
+        throw new Error(
+          `[ontology] entity "${entityName}" property "${k}" has invalid type "${v}". ` +
+            `Valid: ${Array.from(VALID_PROPERTY_TYPES).join(', ')}`,
+        );
+      }
+      properties[k] = { type: v as PropertySpec['type'] };
+      continue;
+    }
+
+    // v1.1 spec object form
+    if (v && typeof v === 'object') {
+      const spec = v as Record<string, unknown>;
+      if (typeof spec.type !== 'string' || !VALID_PROPERTY_TYPES.has(spec.type)) {
+        throw new Error(
+          `[ontology] entity "${entityName}" property "${k}" has invalid spec. ` +
+            `Expected { type: UUID|STRING|... }, got ${JSON.stringify(v)}`,
+        );
+      }
+      const out: PropertySpec = { type: spec.type as PropertySpec['type'] };
+      if (spec.required !== undefined) {
+        if (typeof spec.required !== 'boolean') {
+          throw new Error(`[ontology] entity "${entityName}" property "${k}" .required must be boolean`);
+        }
+        out.required = spec.required;
+      }
+      if (spec.enum !== undefined) {
+        if (!Array.isArray(spec.enum) || !spec.enum.every((x) => typeof x === 'string')) {
+          throw new Error(`[ontology] entity "${entityName}" property "${k}" .enum must be a string array`);
+        }
+        out.enum = spec.enum as string[];
+      }
+      if (typeof spec.description === 'string') {
+        out.description = spec.description;
+      }
+      properties[k] = out;
+      continue;
+    }
+
+    throw new Error(
+      `[ontology] entity "${entityName}" property "${k}" must be a type string or spec object`,
+    );
+  }
+  return properties;
 }

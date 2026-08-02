@@ -12,13 +12,21 @@
  *   "Validar la salida de un LLM contra una ontología estricta cuesta
  *    fracciones de un centavo de cómputo tradicional (CPU/Memoria) en lugar
  *    de costosos tokens de GPU."
+ *
+ * Schema v1.1 support:
+ *  - Required properties (`missing_required_property`)
+ *  - Enum-constrained string values (`invalid_enum_value`)
+ *  - Relation cardinality `1:1` / `1:N` / `N:1` (`cardinality_exceeded`)
+ *  - Entity min/max instance counts (`min_instances_not_met`)
  */
 
 import { OntologyViolationException } from '../errors.js';
 import type {
+  Cardinality,
   DetectedRelation,
   OntologyEntity,
   OntologySchema,
+  PropertySpec,
   PropertyType,
   RelationViolation,
   ValidationResult,
@@ -94,7 +102,10 @@ export function validateResponse(
     }
   }
 
-  // ── 3. Property type enforcement (when enabled) ──
+  // ── 3. Cardinality enforcement ──
+  violations.push(...checkCardinality(schema, detected));
+
+  // ── 4. Property type / required / enum enforcement (when enabled) ──
   if (schema.harness_constraints.enforce_json_schema) {
     for (const entity of entities) {
       const def = schema.ontology.entities.find((e) => e.name === entity);
@@ -103,6 +114,9 @@ export function validateResponse(
       violations.push(...validateProperties(def, node));
     }
   }
+
+  // ── 5. Min / max instance counts ──
+  violations.push(...checkInstanceCounts(schema, entities));
 
   // ── Kill switch ──
   if (violations.length > 0 && schema.harness_constraints.fail_on_unknown_relation) {
@@ -126,6 +140,7 @@ type NormalizedResponse = {
   entities?: unknown;
   relations?: unknown;
   nodes: Record<string, unknown>;
+  counts: Record<string, number>;
 };
 
 /** Normalize object or JSON-string responses into a traversable shape. */
@@ -135,16 +150,17 @@ function normalizeResponse(response: unknown): NormalizedResponse {
     try {
       value = JSON.parse(response);
     } catch {
-      return { nodes: {}, entities: [], relations: [] };
+      return { nodes: {}, counts: {}, entities: [], relations: [] };
     }
   }
 
   if (typeof value !== 'object' || value === null) {
-    return { nodes: {}, entities: [], relations: [] };
+    return { nodes: {}, counts: {}, entities: [], relations: [] };
   }
 
   const obj = value as Record<string, unknown>;
   const nodes = collectNodes(obj);
+  const counts = countEntities(obj.entities);
 
   // Support both `{ entities: ["Client", ...] }` and `{ entities: [{ id, type }, ...] }`
   let entities: string[] = [];
@@ -160,7 +176,24 @@ function normalizeResponse(response: unknown): NormalizedResponse {
     });
   }
 
-  return { entities, relations: obj.relations, nodes };
+  return { entities, relations: obj.relations, nodes, counts };
+}
+
+/** Count entity instances from the response `entities` array (object form). */
+function countEntities(raw: unknown): Record<string, number> {
+  const counts: Record<string, number> = {};
+  if (!Array.isArray(raw)) return counts;
+  for (const e of raw) {
+    if (e && typeof e === 'object') {
+      const o = e as Record<string, unknown>;
+      const type = typeof o.type === 'string' ? o.type : typeof o.name === 'string' ? o.name : undefined;
+      if (type) counts[type] = (counts[type] ?? 0) + 1;
+    } else if (typeof e === 'string') {
+      // String form can't be counted reliably; mark presence only
+      counts[e] = Math.max(counts[e] ?? 0, 1);
+    }
+  }
+  return counts;
 }
 
 /** Collect every node that carries an entity type/name marker. */
@@ -226,27 +259,105 @@ function findEntityNode(input: NormalizedResponse, entity: string): unknown {
   return undefined;
 }
 
+// ─── v1.1 checks ────────────────────────────────────────────────────────
+
+/** Enforce `cardinality` on detected relations (edge count per relation). */
+function checkCardinality(
+  schema: OntologySchema,
+  detected: DetectedRelation[],
+): RelationViolation[] {
+  const violations: RelationViolation[] = [];
+
+  for (const def of schema.ontology.allowed_relations) {
+    if (!def.cardinality) continue;
+
+    const edges = detected.filter(
+      (r) => r.origin === def.origin && r.relation === def.relation && r.target === def.target,
+    );
+
+    const maxEdges = cardinalityMax(def.cardinality);
+    if (maxEdges !== undefined && edges.length > maxEdges) {
+      violations.push({
+        kind: 'cardinality_exceeded',
+        origin: def.origin,
+        relation: def.relation,
+        target: def.target,
+        cardinality: def.cardinality,
+        count: edges.length,
+        message: `relation "${def.origin} -> ${def.relation}" cardinality ${def.cardinality} allows at most ${maxEdges} edge(s), got ${edges.length}`,
+      });
+    }
+  }
+
+  return violations;
+}
+
+/** Return max allowed edges for a cardinality (undefined = no limit). */
+function cardinalityMax(cardinality: Cardinality): number | undefined {
+  switch (cardinality) {
+    case '1:1':
+      return 1; // single edge
+    case '1:N':
+    case 'N:1':
+    case 'N:M':
+      return undefined; // many edges allowed at schema level
+  }
+}
+
+/** Validate property types, required presence, and enum membership. */
 function validateProperties(def: OntologyEntity, node: unknown): RelationViolation[] {
   const violations: RelationViolation[] = [];
   if (!node || typeof node !== 'object') {
     return violations;
   }
   const obj = node as Record<string, unknown>;
-  for (const [prop, expected] of Object.entries(def.properties)) {
+  for (const [prop, rawSpec] of Object.entries(def.properties)) {
+    const spec = toSpec(rawSpec);
     const value = obj[prop];
-    if (value === undefined) continue; // optional in response
-    if (!matchesType(value, expected)) {
+
+    // required presence
+    if (spec.required && value === undefined) {
+      violations.push({
+        kind: 'missing_required_property',
+        entity: def.name,
+        property: prop,
+        message: `entity "${def.name}" missing required property "${prop}"`,
+      });
+      continue;
+    }
+    if (value === undefined) continue;
+
+    // type check
+    if (!matchesType(value, spec.type)) {
       violations.push({
         kind: 'invalid_property_type',
         entity: def.name,
         property: prop,
-        expected,
+        expected: spec.type,
         received: typeof value === 'object' ? JSON.stringify(value) : String(value),
-        message: `entity "${def.name}" property "${prop}" should be ${expected}, got ${JSON.stringify(value)}`,
+        message: `entity "${def.name}" property "${prop}" should be ${spec.type}, got ${JSON.stringify(value)}`,
+      });
+      continue;
+    }
+
+    // enum membership (string values)
+    if (spec.enum && typeof value === 'string' && !spec.enum.includes(value)) {
+      violations.push({
+        kind: 'invalid_enum_value',
+        entity: def.name,
+        property: prop,
+        expected: spec.enum.join('|'),
+        received: value,
+        message: `entity "${def.name}" property "${prop}" value "${value}" not in allowed set [${spec.enum.join(', ')}]`,
       });
     }
   }
   return violations;
+}
+
+/** Normalize a property entry (spec object or shorthand type string) to a spec. */
+function toSpec(raw: PropertySpec | PropertyType): PropertySpec {
+  return typeof raw === 'string' ? { type: raw } : raw;
 }
 
 function matchesType(value: unknown, expected: PropertyType): boolean {
@@ -258,6 +369,37 @@ function matchesType(value: unknown, expected: PropertyType): boolean {
     return false;
   }
   return TYPE_PATTERNS[expected].test(value);
+}
+
+/** Enforce entity `min_instances` / `max_instances` against response counts. */
+function checkInstanceCounts(
+  schema: OntologySchema,
+  entitiesInResponse: string[],
+): RelationViolation[] {
+  const violations: RelationViolation[] = [];
+  for (const def of schema.ontology.entities) {
+    if (def.min_instances === undefined && def.max_instances === undefined) continue;
+    const present = entitiesInResponse.filter((e) => e === def.name).length;
+    if (def.min_instances !== undefined && present < def.min_instances) {
+      violations.push({
+        kind: 'min_instances_not_met',
+        entity: def.name,
+        expected: String(def.min_instances),
+        count: present,
+        message: `entity "${def.name}" requires at least ${def.min_instances} instance(s), found ${present}`,
+      });
+    }
+    if (def.max_instances !== undefined && present > def.max_instances) {
+      violations.push({
+        kind: 'cardinality_exceeded',
+        entity: def.name,
+        expected: String(def.max_instances),
+        count: present,
+        message: `entity "${def.name}" allows at most ${def.max_instances} instance(s), found ${present}`,
+      });
+    }
+  }
+  return violations;
 }
 
 /** Extract only the pure data relations/entities — payload compression. */

@@ -1,4 +1,4 @@
-# tokenops_ontology.yaml — Deterministic Ontology Schema (T-Box)
+# tokenops_ontology.yaml — Deterministic Ontology Schema (T-Box) v1.1
 #
 # Grounding Ledger para Tinkuy: contrato estricto de entidades, propiedades y
 # relaciones que el validador ontológico (src/ontology/validator.ts) aplica
@@ -9,27 +9,62 @@
 #   const schema = await loadOntology('schema/tokenops_ontology.yaml');
 #
 # Es 100% opcional: si el agente no recibe `ontology`, se comporta sin validar.
+#
+# v1.1: propiedades con spec ({type, required, enum}), cardinalidad de
+# relaciones (1:1/1:N/N:1/N:M), min/max_instances por entidad, meta block.
+# Los campos nuevos son opcionales — los schemas v1.0 siguen siendo válidos.
 
-version: "1.0"
+version: "1.1"
 domain: "customer_operations"
+
+meta:
+  description: "Dominio de operaciones de clientes: disputas de facturación"
+  owner: "finops-platform"
+  updated_at: "2026-08-02"
 
 # 1. ESQUEMA DETERMINÍSTICO DE ENTIDADES (T-Box / Grafo Estricto)
 ontology:
   entities:
     - name: "Client"
+      description: "Cuenta de cliente con estado activo/inactivo/bloqueado"
+      min_instances: 1
       properties:
-        id: "UUID"
-        status: "STRING"
+        id:
+          type: "UUID"
+          required: true
+        status:
+          type: "STRING"
+          enum: ["ACTIVE", "INACTIVE", "BLOCKED"]
+          required: true
+        risk_score:
+          type: "FLOAT"
     - name: "Invoice"
+      description: "Factura asociada a un cliente"
       properties:
-        id: "UUID"
-        amount: "FLOAT"
-        currency: "STRING"
+        id:
+          type: "UUID"
+          required: true
+        amount:
+          type: "FLOAT"
+          required: true
+        currency:
+          type: "STRING"
+          enum: ["USD", "EUR", "PEN"]
+          required: true
+        status:
+          type: "STRING"
+          enum: ["OPEN", "PAID", "DISPUTED", "VOID"]
 
   allowed_relations:
     - origin: "Client"
       relation: "HAS_BILLING_DISPUTE"
       target: "Invoice"
+      cardinality: "1:N"            # un Client puede tener muchas disputas
+      description: "Cliente disputa una o más facturas"
+    - origin: "Invoice"
+      relation: "BELONGS_TO"
+      target: "Client"
+      cardinality: "1:1"            # una factura pertenece a un único cliente
 
 # 2. CONFIGURACIÓN FINANCIERA DE TOKENOPS (Control de Recursos)
 harness_constraints:

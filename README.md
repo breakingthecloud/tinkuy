@@ -218,7 +218,7 @@ const agent = new Agent({ router: myRouter, tools: [...], systemPrompt: '...' })
 
 ## Deterministic Ontology Validation
 
-Validate LLM output against a strict T-Box schema (entities + allowed relations + property types) in pure CPU/memory — **zero token cost**. This replaces LLM-as-a-judge for grounding decisions, per the TokenOps research.
+Validate LLM output against a strict T-Box schema (entities + allowed relations + property types) in pure CPU/memory — **zero token cost**. This replaces LLM-as-a-judge for grounding decisions, per the TokenOps research. New to ontologies? Start with the [Ontologies 101 guide](docs/ONTOLOGIES-101.md).
 
 ```typescript
 import { Agent } from '@carloscortezcloud/tinkuy-agent';
@@ -236,22 +236,46 @@ const agent = new Agent({
 
 With `fail_on_unknown_relation: true` in the schema, a hallucinated entity/relation throws `OntologyViolationException` and the response is **not** persisted or billed. The validator also compresses the payload to pure data relations, feeding prompt caching.
 
+Schema v1.1 adds deterministic grounding depth beyond type checking: **required properties**, **enum constraints**, **relation cardinality** (`1:1`/`1:N`/`N:1`/`N:M`), **min/max instance counts**, and a governance `meta` block. Property shorthand (`id: "UUID"`) still works — full specs are optional.
+
 ```yaml
-# schema/tokenops_ontology.yaml
+# schema/tokenops_ontology.yaml (v1.1)
+meta:
+  description: "Dominio de operaciones de clientes"
+  owner: "finops-platform"
 ontology:
   entities:
     - name: "Client"
-      properties: { id: "UUID", status: "STRING" }
+      min_instances: 1
+      properties:
+        id: { type: "UUID", required: true }
+        status:
+          type: "STRING"
+          enum: ["ACTIVE", "INACTIVE", "BLOCKED"]
+          required: true
     - name: "Invoice"
-      properties: { id: "UUID", amount: "FLOAT", currency: "STRING" }
+      properties:
+        id: { type: "UUID", required: true }
+        amount: { type: "FLOAT", required: true }
+        currency:
+          type: "STRING"
+          enum: ["USD", "EUR", "PEN"]
+          required: true
   allowed_relations:
     - origin: "Client"
       relation: "HAS_BILLING_DISPUTE"
       target: "Invoice"
+      cardinality: "1:N"   # un Client, muchas disputas
+    - origin: "Invoice"
+      relation: "BELONGS_TO"
+      target: "Client"
+      cardinality: "1:1"   # una factura, un único cliente
 harness_constraints:
   enforce_json_schema: true
   fail_on_unknown_relation: true   # KILL SWITCH on hallucination
 ```
+
+Violations are surfaced with structured kinds for observability (Qhaway/Phoenix): `unknown_entity`, `unknown_relation`, `invalid_target`, `invalid_property_type`, `missing_required_property`, `invalid_enum_value`, `cardinality_exceeded`, `min_instances_not_met`.
 
 ## License
 

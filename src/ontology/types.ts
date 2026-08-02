@@ -3,15 +3,43 @@
  *
  * T-Box (strict graph) schema consumed by the validator. Mirrors the
  * `tokenops_ontology.yaml` structure from the TokenOps research.
+ *
+ * Schema v1.1 additions (backward compatible):
+ *  - Property specs: `{ type, required?, enum? }` (shorthand string still valid)
+ *  - Relation cardinality: `1:1` / `1:N` / `N:M`
+ *  - Entity / relation metadata (description)
+ *  - Entity required-entity enforcement (`min_instances` in response)
  */
 
 /** Supported property value types in the strict schema */
 export type PropertyType = 'UUID' | 'STRING' | 'FLOAT' | 'INTEGER' | 'BOOLEAN' | 'ARRAY' | 'OBJECT';
 
+/** Enum-like shorthand: allows the schema to constrain allowed string values */
+export type Cardinality = '1:1' | '1:N' | 'N:1' | 'N:M';
+
+/** A single property definition. `PropertyType` shorthand is still accepted. */
+export interface PropertySpec {
+  type: PropertyType;
+  /** Whether the property MUST be present in the response */
+  required?: boolean;
+  /** Constrains STRING values to an allowed set */
+  enum?: string[];
+  /** Human-readable description */
+  description?: string;
+}
+
+/** Property map: full spec or shorthand type string */
+export type PropertyMap = Record<string, PropertySpec | PropertyType>;
+
 /** A named entity with typed properties */
 export interface OntologyEntity {
   name: string;
-  properties: Record<string, PropertyType>;
+  description?: string;
+  properties: PropertyMap;
+  /** If set, the validator requires this many instances of the entity in the response */
+  min_instances?: number;
+  /** If set, the validator caps how many instances of the entity may appear */
+  max_instances?: number;
 }
 
 /** A permitted directed relation origin → relation → target */
@@ -19,6 +47,9 @@ export interface AllowedRelation {
   origin: string;
   relation: string;
   target: string;
+  /** Multiplicity of the edge (default: no constraint) */
+  cardinality?: Cardinality;
+  description?: string;
 }
 
 /** Routing / budget constraints carried over for Styrr integration */
@@ -40,6 +71,12 @@ export interface HarnessConstraints {
 export interface OntologySchema {
   version: string;
   domain: string;
+  /** Optional metadata for governance */
+  meta?: {
+    description?: string;
+    owner?: string;
+    updated_at?: string;
+  };
   ontology: {
     entities: OntologyEntity[];
     allowed_relations: AllowedRelation[];
@@ -67,7 +104,16 @@ export interface ValidationResult {
 
 /** Details of a schema violation (for observability: Qhaway / Phoenix) */
 export interface RelationViolation {
-  kind: 'unknown_entity' | 'unknown_relation' | 'invalid_target' | 'invalid_property_type' | 'malformed';
+  kind:
+    | 'unknown_entity'
+    | 'unknown_relation'
+    | 'invalid_target'
+    | 'invalid_property_type'
+    | 'missing_required_property'
+    | 'invalid_enum_value'
+    | 'cardinality_exceeded'
+    | 'min_instances_not_met'
+    | 'malformed';
   origin?: string;
   relation?: string;
   target?: string;
@@ -75,5 +121,7 @@ export interface RelationViolation {
   property?: string;
   expected?: string;
   received?: string;
+  cardinality?: Cardinality;
+  count?: number;
   message: string;
 }
