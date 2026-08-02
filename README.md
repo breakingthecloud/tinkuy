@@ -14,6 +14,8 @@
   ·
   <a href="#streaming">Streaming</a>
   ·
+  <a href="#deterministic-ontology-validation">Ontology</a>
+  ·
   <a href="#ecosystem">Ecosystem</a>
 </p>
 
@@ -21,7 +23,7 @@
   <img src="https://img.shields.io/npm/v/@carloscortezcloud/tinkuy-agent?style=flat-square&logo=npm&color=3B82F6" alt="npm">
   <img src="https://img.shields.io/badge/license-Apache_2.0-3B82F6?style=flat-square" alt="License">
   <img src="https://img.shields.io/badge/TypeScript-5.5%2B-3178C6?style=flat-square&logo=typescript" alt="TypeScript">
-  <img src="https://img.shields.io/badge/dependencies-0-success?style=flat-square" alt="Zero deps">
+  <img src="https://img.shields.io/badge/dependencies-1-yellow?style=flat-square" alt="Deps">
   <img src="https://img.shields.io/badge/size-%3E5KB-3B82F6?style=flat-square" alt="Size">
   <img src="https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat-square" alt="PRs">
 </p>
@@ -121,10 +123,11 @@ Agent → User: { text, iterations, toolsUsed, totalLatencyMs }
 | **Streaming** | `Agent.stream()` yields AG-UI events (`text_delta`, `tool_call_result`, `done`, `blocked`) |
 | **SSE helper** | `agentToSSE()` converts stream to Cloudflare Worker `Response` |
 | **Observable** | `onIteration` + `onToolCall` + `onComplete` hooks |
+| **Deterministic grounding** | `ontology` module — validate output vs strict graph, zero-token cost (TokenOps) |
 | **Conversation state** | `MemoryConversationStore` / `KVConversationStore` with sliding windows |
 | **Max iterations** | Infinite loop protection (default 10) |
 | **Error resilient** | Tool errors fed back to LLM — it recovers |
-| **Zero deps** | Only peer deps on Styrr + Sayay (both optional) |
+| **Zero deps (core)** | Core agent loop is dependency-free; only `yaml` for the optional ontology module |
 | **Tiny** | ~200 lines core logic, ~5KB bundled |
 
 ## Streaming
@@ -212,6 +215,43 @@ const agent = new Agent({ router: myRouter, tools: [...], systemPrompt: '...' })
 | **Sayay** | Cost guardrails | GitHub |
 | **Qhaway** | Agent observability | `@carloscortezcloud/qhaway` |
 | **TideRAG** | Edge RAG pipeline | `@carloscortezcloud/tiderag` |
+
+## Deterministic Ontology Validation
+
+Validate LLM output against a strict T-Box schema (entities + allowed relations + property types) in pure CPU/memory — **zero token cost**. This replaces LLM-as-a-judge for grounding decisions, per the TokenOps research.
+
+```typescript
+import { Agent } from '@carloscortezcloud/tinkuy-agent';
+import { loadOntology } from '@carloscortezcloud/tinkuy-agent/ontology';
+
+const ontology = await loadOntology('schema/tokenops_ontology.yaml');
+
+const agent = new Agent({
+  router,
+  tools,
+  ontology,                 // optional — without it, behavior is unchanged
+  onOntologyValidated: ({ validation }) => console.log('grounded', validation.relations),
+});
+```
+
+With `fail_on_unknown_relation: true` in the schema, a hallucinated entity/relation throws `OntologyViolationException` and the response is **not** persisted or billed. The validator also compresses the payload to pure data relations, feeding prompt caching.
+
+```yaml
+# schema/tokenops_ontology.yaml
+ontology:
+  entities:
+    - name: "Client"
+      properties: { id: "UUID", status: "STRING" }
+    - name: "Invoice"
+      properties: { id: "UUID", amount: "FLOAT", currency: "STRING" }
+  allowed_relations:
+    - origin: "Client"
+      relation: "HAS_BILLING_DISPUTE"
+      target: "Invoice"
+harness_constraints:
+  enforce_json_schema: true
+  fail_on_unknown_relation: true   # KILL SWITCH on hallucination
+```
 
 ## License
 
