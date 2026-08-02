@@ -1,0 +1,43 @@
+# tokenops_ontology.yaml — Deterministic Ontology Schema (T-Box)
+#
+# Grounding Ledger para Tinkuy: contrato estricto de entidades, propiedades y
+# relaciones que el validador ontológico (src/ontology/validator.ts) aplica
+# sobre las respuestas del LLM ANTES de persistir o gastar tokens.
+#
+# Uso:
+#   import { loadOntology } from '@carloscortezcloud/tinkuy-agent/ontology';
+#   const schema = await loadOntology('schema/tokenops_ontology.yaml');
+#
+# Es 100% opcional: si el agente no recibe `ontology`, se comporta sin validar.
+
+version: "1.0"
+domain: "customer_operations"
+
+# 1. ESQUEMA DETERMINÍSTICO DE ENTIDADES (T-Box / Grafo Estricto)
+ontology:
+  entities:
+    - name: "Client"
+      properties:
+        id: "UUID"
+        status: "STRING"
+    - name: "Invoice"
+      properties:
+        id: "UUID"
+        amount: "FLOAT"
+        currency: "STRING"
+
+  allowed_relations:
+    - origin: "Client"
+      relation: "HAS_BILLING_DISPUTE"
+      target: "Invoice"
+
+# 2. CONFIGURACIÓN FINANCIERA DE TOKENOPS (Control de Recursos)
+harness_constraints:
+  enforce_json_schema: true
+  fail_on_unknown_relation: true   # KILL SWITCH si el LLM inventa relaciones (Alucinación)
+
+  strands_routing:
+    default_tier: "economy"        # Equivale a GPT-4o-mini / Llama 3.1 8B
+    fallback_tier: "reasoning"     # Equivale a OpenAI o1 / Claude 3.5 Sonnet
+    max_retries_before_abort: 2
+    max_usd_budget_per_strand: 0.02

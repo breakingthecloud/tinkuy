@@ -7,6 +7,8 @@
  */
 
 import type { ConversationStore } from '../conversation/index.js';
+import type { OntologySchema } from '../ontology/types.js';
+import type { ValidationResult } from '../ontology/types.js';
 
 // ─── Tool System ────────────────────────────────────────────────────────
 
@@ -118,6 +120,17 @@ export interface AgentConfig {
   temperature?: number;
   /** Conversation store for multi-turn persistence */
   conversationStore?: ConversationStore;
+  /**
+   * Optional deterministic grounding (TokenOps ontology).
+   * When provided, every model response is validated against the strict
+   * T-Box schema before it is persisted or fed back to the loop.
+   * Throws `OntologyViolationException` when `fail_on_unknown_relation` is set.
+   */
+  ontology?: OntologySchema;
+  /** Hook: called after ontology validation, before persistence. */
+  onOntologyValidated?: (event: { validation: ValidationResult }) => void;
+  /** Hook: called when ontology validation fails (even without kill switch). */
+  onOntologyViolation?: (event: { violations: import('../ontology/types.js').RelationViolation[] }) => void;
   /** Hook: called after each iteration */
   onIteration?: (event: IterationEvent) => void;
   /** Hook: called when a tool executes */
