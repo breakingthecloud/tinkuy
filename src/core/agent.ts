@@ -25,6 +25,7 @@ import type {
   ToolSchema,
 } from '../types/index.js';
 import { validateResponse } from '../ontology/validator.js';
+import { extractTextToolCall } from './text-tool.js';
 
 export class Agent {
   private router: Router;
@@ -35,6 +36,7 @@ export class Agent {
   private temperature: number;
   private userId: string;
   private config: AgentConfig;
+  private textToolAttempts = 0;
 
   constructor(config: AgentConfig) {
     this.config = config;
@@ -68,6 +70,7 @@ export class Agent {
     const allToolResults: ToolResult[] = [];
     let totalLatencyMs = 0;
     let iterations = 0;
+    this.textToolAttempts = 0;
 
     for (let i = 0; i < this.maxIterations; i++) {
       iterations = i + 1;
@@ -155,6 +158,46 @@ export class Agent {
         return;
       }
 
+      // ── Detect text-embedded tool call (free models emit JSON instead of structured tool_calls) ──
+      let textToolDetected = false;
+      if (iterationToolCalls.length === 0) {
+        const textTool = extractTextToolCall(accumulator);
+        if (textTool) {
+          this.textToolAttempts++;
+          if (this.textToolAttempts <= 2) {
+            const pending: ToolCall = {
+              id: `text_${Date.now()}_${this.textToolAttempts}`,
+              name: textTool.name,
+              arguments: textTool.arguments,
+            };
+            iterationToolCalls.push(pending);
+            textToolDetected = true;
+
+            const toolResult = await this.executeTool(pending, iterations);
+            allToolResults.push(toolResult);
+            if (!toolsUsed.includes(pending.name)) toolsUsed.push(pending.name);
+            if (this.config.onToolCall) {
+              this.config.onToolCall({
+                iteration: iterations,
+                tool: pending.name,
+                arguments: pending.arguments as Record<string, unknown>,
+                result: toolResult.result,
+                durationMs: toolResult.durationMs,
+                error: toolResult.error,
+              });
+            }
+            yield {
+              type: 'tool_call_result',
+              tool: pending.name,
+              toolArgs: pending.arguments as Record<string, unknown>,
+              toolResult: toolResult.result,
+              toolError: toolResult.error,
+              durationMs: toolResult.durationMs,
+            };
+          }
+        }
+      }
+
       totalLatencyMs += latencyMs;
       if (modelUsed && !modelsUsed.includes(modelUsed)) modelsUsed.push(modelUsed);
       if (this.guard && completionTokens > 0) {
@@ -164,7 +207,7 @@ export class Agent {
 
       messages.push({
         role: 'assistant',
-        content: accumulator,
+        content: textToolDetected ? '' : accumulator,
         toolCalls: iterationToolCalls.length > 0 ? iterationToolCalls : undefined,
       });
 
@@ -221,6 +264,7 @@ export class Agent {
     const modelsUsed: string[] = [];
     let totalLatencyMs = 0;
     let iterations = 0;
+    this.textToolAttempts = 0;
 
     for (let i = 0; i < this.maxIterations; i++) {
       iterations = i + 1;
@@ -271,7 +315,21 @@ export class Agent {
         });
       }
 
-      // ── No tool calls? Final answer. ──
+      // ── No tool calls? Check for text-embedded tool call. ──
+      if (!response.toolCalls?.length) {
+        const textTool = extractTextToolCall(response.text);
+        if (textTool) {
+          this.textToolAttempts++;
+          if (this.textToolAttempts <= 2) {
+            response.toolCalls = [{
+              id: `text_${Date.now()}_${this.textToolAttempts}`,
+              name: textTool.name,
+              arguments: textTool.arguments,
+            }];
+          }
+        }
+      }
+
       if (!response.toolCalls?.length) {
         messages.push({ role: 'assistant', content: response.text });
         const result = this.result({ text: response.text, blocked: false, iterations, toolsUsed, toolResults, totalLatencyMs, modelsUsed });

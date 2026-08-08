@@ -27,6 +27,10 @@ export { Agent } from './core/agent.js';
 // Tools
 export { defineTool, simpleTask } from './tools/index.js';
 
+// Text-embedded tool call extraction
+export { extractTextToolCall } from './core/text-tool.js';
+export type { ExtractedTextTool } from './core/text-tool.js';
+
 // Registry
 export { ToolRegistry } from './registry/index.js';
 export type { ToolRegistryEntry, RegistryValidationError } from './registry/index.js';
